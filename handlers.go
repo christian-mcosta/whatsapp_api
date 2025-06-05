@@ -158,6 +158,7 @@ func (s *server) Connect() http.HandlerFunc {
 		txtid := r.Context().Value("userinfo").(Values).Get("Id")
 		token := r.Context().Value("userinfo").(Values).Get("Token")
 		eventstring := ""
+		systemName := r.Header.Get("X-systemname")
 
 		// Decodes request BODY looking for events to subscribe
 		decoder := json.NewDecoder(r.Body)

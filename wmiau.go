@@ -260,7 +260,7 @@ func (s *server) connectOnStartup() {
 			eventstring := strings.Join(subscribedEvents, ",")
 			log.Info().Str("events", eventstring).Str("jid", jid).Msg("Attempt to connect")
 			killchannel[txtid] = make(chan bool)
-			go s.startClient(txtid, jid, token, subscribedEvents)
+			go s.startClient(txtid, jid, token, subscribedEvents, systemName)
 
 			// Initialize S3 client if configured
 			go func(userID string) {
@@ -335,7 +335,7 @@ func parseJID(arg string) (types.JID, bool) {
 	}
 }
 
-func (s *server) startClient(userID string, textjid string, token string, subscriptions []string) {
+func (s *server) startClient(userID string, textjid string, token string, subscriptions []string, systemName *string) {
 	log.Info().Str("userid", userID).Str("jid", textjid).Msg("Starting websocket connection to Whatsapp")
 
 	var deviceStore *store.Device
@@ -383,7 +383,11 @@ func (s *server) startClient(userID string, textjid string, token string, subscr
 	}
 
 	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_UNKNOWN.Enum()
-	store.DeviceProps.Os = osName
+	if systemName == nil || *systemName == "" {
+		store.DeviceProps.Os = osName
+	} else {
+		store.DeviceProps.Os = systemName
+	}
 
 	clientManager.SetWhatsmeowClient(userID, client)
 	mycli := MyClient{client, 1, userID, token, subscriptions, s.db, s}

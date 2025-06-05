@@ -65,10 +65,10 @@ func init() {
 
 	flag.Parse()
 
-	// Novo bloco para sobrescrever o osName pelo ENV, se existir
-	if v := os.Getenv("SESSION_DEVICE_NAME"); v != "" {
-		*osName = v
-	}
+	/*	// Novo bloco para sobrescrever o osName pelo ENV, se existir
+		if v := os.Getenv("SESSION_DEVICE_NAME"); v != "" {
+			*osName = v
+		}*/
 
 	if *versionFlag {
 		fmt.Printf("WuzAPI version %s\n", version)
@@ -213,7 +213,7 @@ func main() {
 	}
 	s.routes()
 
-	s.connectOnStartup()
+	s.connectOnStartup(osName)
 
 	srv := &http.Server{
 		Addr:              *address + ":" + *port,
