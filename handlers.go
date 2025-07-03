@@ -1632,108 +1632,185 @@ func (s *server) SendLocation() http.HandlerFunc {
 	}
 }
 
-// Sends Buttons (not implemented, does not work)
+// SendButtons envia botões usando TemplateMessage (HydratedTemplate),
+// o único formato ainda aceito por contas QR‑Code.
+// Se falhar por qualquer outro motivo, aborta e loga o erro.
+// SendButtons envia TemplateMessage (HydratedFourRowTemplate) com botões dinâmicos.
 func (s *server) SendButtons() http.HandlerFunc {
 
-	type buttonStruct struct {
-		ButtonId   string
-		ButtonText string
+	// ---------- Payloads ---------------------------------------------------
+	type buttonPayload struct {
+		Type       string `json:"Type"`               // "quick_reply" | "url" | "call"
+		ButtonId   string `json:"ButtonId,omitempty"` // quick‑reply
+		ButtonText string `json:"ButtonText"`         // todos
+		Url        string `json:"Url,omitempty"`      // url
+		Phone      string `json:"Phone,omitempty"`    // call
 	}
-	type textStruct struct {
-		Phone   string
-		Title   string
-		Buttons []buttonStruct
-		Id      string
+	type reqPayload struct {
+		Phone   string          `json:"Phone"`
+		Title   string          `json:"Title"`
+		Footer  string          `json:"Footer,omitempty"`
+		Buttons []buttonPayload `json:"Buttons"`
+		Id      string          `json:"Id,omitempty"`
 	}
 
+	// ---------- Handler ----------------------------------------------------
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-
-		if clientManager.GetWhatsmeowClient(txtid) == nil {
+		ctx := r.Context()
+		txtID := ctx.Value("userinfo").(Values).Get("Id")
+		cli := clientManager.GetWhatsmeowClient(txtID)
+		if cli == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
 
-		msgid := ""
-		var resp whatsmeow.SendResponse
-
-		decoder := json.NewDecoder(r.Body)
-		var t textStruct
-		err := decoder.Decode(&t)
-		if err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode Payload"))
+		// ---- Parse JSON ----------------------------------------------------
+		var req reqPayload
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode payload"))
 			return
 		}
 
-		if t.Phone == "" {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("missing Phone in Payload"))
+		// ---- Validate campos básicos --------------------------------------
+		switch {
+		case req.Phone == "":
+			s.Respond(w, r, http.StatusBadRequest, errors.New("missing Phone"))
+			return
+		case req.Title == "":
+			s.Respond(w, r, http.StatusBadRequest, errors.New("missing Title"))
+			return
+		case len(req.Buttons) == 0:
+			s.Respond(w, r, http.StatusBadRequest, errors.New("missing Buttons"))
+			return
+		case len(req.Buttons) > 3:
+			s.Respond(w, r, http.StatusBadRequest, errors.New("buttons cant be more than 3"))
 			return
 		}
 
-		if t.Title == "" {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("missing Title in Payload"))
-			return
-		}
-
-		if len(t.Buttons) < 1 {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("missing Buttons in Payload"))
-			return
-		}
-		if len(t.Buttons) > 3 {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("buttons cant more than 3"))
-			return
-		}
-
-		recipient, ok := parseJID(t.Phone)
+		// ---- JID / MsgID ---------------------------------------------------
+		jid, ok := parseJID(req.Phone)
 		if !ok {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("could not parse Phone"))
 			return
 		}
-
-		if t.Id == "" {
-			msgid = clientManager.GetWhatsmeowClient(txtid).GenerateMessageID()
-		} else {
-			msgid = t.Id
+		msgID := req.Id
+		if msgID == "" {
+			msgID = cli.GenerateMessageID()
 		}
 
-		var buttons []*waE2E.ButtonsMessage_Button
+		// ---- Constrói HydratedButtons -------------------------------------
+		hButtons := make([]*waE2E.HydratedTemplateButton, 0, len(req.Buttons))
+		for i, b := range req.Buttons {
 
-		for _, item := range t.Buttons {
-			buttons = append(buttons, &waE2E.ButtonsMessage_Button{
-				ButtonID:       proto.String(item.ButtonId),
-				ButtonText:     &waE2E.ButtonsMessage_Button_ButtonText{DisplayText: proto.String(item.ButtonText)},
-				Type:           waE2E.ButtonsMessage_Button_RESPONSE.Enum(),
-				NativeFlowInfo: &waE2E.ButtonsMessage_Button_NativeFlowInfo{},
-			})
+			btnIdx := proto.Uint32(uint32(i + 1))
+			switch strings.ToLower(b.Type) {
+
+			case "quick_reply", "quickreply", "":
+				// quick‑reply é default
+				if b.ButtonId == "" {
+					s.Respond(w, r, http.StatusBadRequest,
+						fmt.Errorf("button %d: missing ButtonId for quick_reply", i))
+					return
+				}
+				hButtons = append(hButtons, &waE2E.HydratedTemplateButton{
+					Index: btnIdx,
+					HydratedButton: &waE2E.HydratedTemplateButton_QuickReplyButton{
+						QuickReplyButton: &waE2E.HydratedTemplateButton_HydratedQuickReplyButton{
+							DisplayText: proto.String(b.ButtonText),
+							ID:          proto.String(b.ButtonId),
+						},
+					},
+				})
+
+			case "url":
+				if b.Url == "" {
+					s.Respond(w, r, http.StatusBadRequest,
+						fmt.Errorf("button %d: missing Url for url button", i))
+					return
+				}
+				hButtons = append(hButtons, &waE2E.HydratedTemplateButton{
+					Index: btnIdx,
+					HydratedButton: &waE2E.HydratedTemplateButton_UrlButton{
+						UrlButton: &waE2E.HydratedTemplateButton_HydratedURLButton{
+							DisplayText: proto.String(b.ButtonText),
+							URL:         proto.String(b.Url),
+						},
+					},
+				})
+
+			case "call":
+				if b.Phone == "" {
+					s.Respond(w, r, http.StatusBadRequest,
+						fmt.Errorf("button %d: missing Phone for call button", i))
+					return
+				}
+				hButtons = append(hButtons, &waE2E.HydratedTemplateButton{
+					Index: btnIdx,
+					HydratedButton: &waE2E.HydratedTemplateButton_CallButton{
+						CallButton: &waE2E.HydratedTemplateButton_HydratedCallButton{
+							DisplayText: proto.String(b.ButtonText),
+							PhoneNumber: proto.String(b.Phone),
+						},
+					},
+				})
+
+			default:
+				s.Respond(w, r, http.StatusBadRequest,
+					fmt.Errorf("button %d: invalid Type '%s'", i, b.Type))
+				return
+			}
 		}
 
-		msg2 := &waE2E.ButtonsMessage{
-			ContentText: proto.String(t.Title),
-			HeaderType:  waE2E.ButtonsMessage_EMPTY.Enum(),
-			Buttons:     buttons,
+		// ---- Monta TemplateMessage ----------------------------------------
+		tpl := &waE2E.TemplateMessage_HydratedFourRowTemplate{
+			HydratedContentText: proto.String(req.Title),
+			HydratedButtons:     hButtons,
+			Title: &waE2E.TemplateMessage_HydratedFourRowTemplate_HydratedTitleText{
+				HydratedTitleText: req.Title,
+			}, // <- necessário para mobile
 		}
-
-		resp, err = clientManager.GetWhatsmeowClient(txtid).SendMessage(context.Background(), recipient, &waE2E.Message{ViewOnceMessage: &waE2E.FutureProofMessage{
-			Message: &waE2E.Message{
-				ButtonsMessage: msg2,
+		if req.Footer != "" {
+			tpl.HydratedFooterText = proto.String(req.Footer)
+		}
+		tplMsg := &waE2E.Message{
+			TemplateMessage: &waE2E.TemplateMessage{
+				HydratedTemplate: tpl,
+				TemplateID:       proto.String("4194019344155670"),
 			},
-		}}, whatsmeow.SendRequestExtra{ID: msgid})
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("error sending message: %v", err)))
-			return
+			MessageContextInfo: &waE2E.MessageContextInfo{
+				DeviceListMetadataVersion: proto.Int32(2),
+				DeviceListMetadata: &waE2E.DeviceListMetadata{
+					RecipientTimestamp: proto.Uint64(uint64(time.Now().Unix())),
+				},
+			},
 		}
 
+		// ---- Envia ---------------------------------------------------------
+		resp, err := cli.SendMessage(ctx, jid, tplMsg, whatsmeow.SendRequestExtra{ID: msgID})
 		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
 		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
 		responseJson, err := json.Marshal(response)
 		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
-		} else {
-			s.Respond(w, r, http.StatusOK, string(responseJson))
+			s.Respond(w, r, http.StatusInternalServerError,
+				fmt.Errorf("error sending template: %v", err))
+			return
 		}
-		return
+
+		log.Info().
+			Str("message_id", resp.ID).
+			Time("timestamp", resp.Timestamp).
+			Msg("Message sent with success")
+
+		s.respondOK(w, uint64(resp.Timestamp.Unix()), msgID)
 	}
+}
+
+// respondOK: helper para encapsular JSON de sucesso
+func (s *server) respondOK(w http.ResponseWriter, ts uint64, id string) {
+	resp := map[string]interface{}{"Details": "Sent", "Timestamp": ts, "Id": id}
+	blob, _ := json.Marshal(resp)
+	s.Respond(w, nil, http.StatusOK, string(blob))
 }
 
 // SendList

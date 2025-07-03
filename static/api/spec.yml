@@ -1911,35 +1911,60 @@ definitions:
             RowId:
               type: string
               example: 1
-
+  
   MessageButtons:
     type: object
     required:
       - Phone
-      - Body
+      - Title
+      - Footer
+      - Buttons
     properties:
       Phone:
         type: string
-        example: "5521971532700"
-      Body:
+        example: "551180551512"
+      Title:
         type: string
-        example: How you doin
+        example: "Choice option"
+      Footer:
+        type: string
+        example: "Powered by Example"
       Id:
         type: string
         example: "ABCDABCD1234"
-      ContextInfo:
-        type: object
-        required:
-          - StanzaId
-          - Participant
-        properties:
-          StanzaId: 
-            type: string
-            example: "3EB06F9067F80BAB89FF" 
-          Participant: 
-            type: string
-            example: "5491155553935@s.whatsapp.net"
-
+      Buttons:
+        type: array
+        items:
+          type: object
+          required:
+            - Type
+            - ButtonId
+            - ButtonText
+            - Url
+            - Phone
+          properties:
+            Type:
+              type: string
+              enum: [ quick_reply, url, call ]
+            ButtonId:
+              type: string
+            ButtonText:
+              type: string
+    example:
+      Phone: "551198561215"
+      Title: "Escolha uma opção"
+      Footer: "Powered by Catálogo 3.0"
+      Id: "ABCDABCD1234"
+      Buttons:
+        - Type: "quick_reply"
+          ButtonId: "send_yes"
+          ButtonText: "Yes"
+        - Type: "url"
+          ButtonText: "url"
+          Url: "https://www.meusite.com"
+        - Type: "call"
+          ButtonText: "my_phone"
+          Phone: "551185124515"
   MessageText:
     type: object
     required:
