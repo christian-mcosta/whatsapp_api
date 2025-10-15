@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-REQUIRED_GO_VERSION="1.23"
+REQUIRED_GO_VERSION="1.24"
 GO_EXEC="/snap/bin/go"
 
 echo "===== Iniciando build para Elastic Beanstalk ====="

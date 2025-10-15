@@ -57,6 +57,7 @@ go build .
 ```bash
 ./deploy.sh
 ```
+4. Na AWS em Elastic Beanstalk -> Ambientes -> "Ambiente da api", clique em Fazer upload e implantar, em "escolher arquivo" busque o arquivo whatsappapi.zip criado pelo deploy e clique em Implantar. 
 
 ## Run
 
