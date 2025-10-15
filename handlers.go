@@ -204,7 +204,7 @@ func (s *server) Connect() http.HandlerFunc {
 
 		log.Info().Str("jid", jid).Msg("Attempt to connect")
 		killchannel[txtid] = make(chan bool)
-		go s.startClient(txtid, jid, token, subscribedEvents)
+		go s.startClient(txtid, jid, token, subscribedEvents, &systemName)
 
 		if t.Immediate == false {
 			log.Warn().Msg("Waiting 10 seconds")
@@ -1788,9 +1788,6 @@ func (s *server) SendButtons() http.HandlerFunc {
 
 		// ---- Envia ---------------------------------------------------------
 		resp, err := cli.SendMessage(ctx, jid, tplMsg, whatsmeow.SendRequestExtra{ID: msgID})
-		log.Info().Str("timestamp", fmt.Sprintf("%v", resp.Timestamp)).Str("id", msgid).Msg("Message sent")
-		response := map[string]interface{}{"Details": "Sent", "Timestamp": resp.Timestamp.Unix(), "Id": msgid}
-		responseJson, err := json.Marshal(response)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError,
 				fmt.Errorf("error sending template: %v", err))

@@ -202,7 +202,7 @@ func checkIfSubscribedToEvent(subscribedEvents []string, eventType string, userI
 }
 
 // Connects to Whatsapp Websocket on server startup if last state was connected
-func (s *server) connectOnStartup() {
+func (s *server) connectOnStartup(systemName *string) {
 	rows, err := s.db.Queryx("SELECT id,name,token,jid,webhook,events,proxy_url,CASE WHEN s3_enabled THEN 'true' ELSE 'false' END AS s3_enabled,media_delivery,COALESCE(history, 0) as history FROM users WHERE connected=1")
 	if err != nil {
 		log.Error().Err(err).Msg("DB Problem")
